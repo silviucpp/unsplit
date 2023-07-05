@@ -160,10 +160,12 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
         table = Tab, attributes = Attrs,
         remote = Remote,
         chunk = get_table_chunk_factor(Tab),
-        strategy = default_strategy()},
-        ?INFO_MSG("Calling ~p:~p(init, ~p)", [M,F,[Tab,Attrs|XArgs]]),
+        strategy = get_strategy(Tab)
+    },
     try
-        run_stitch(check_return(M:F(init, [Tab, Attrs | XArgs]), S0))
+        FinalArgs = [Tab,Attrs|XArgs],
+        ?INFO_MSG("Calling ~p:~p (init, ~p)", [M,F,FinalArgs]),
+        run_stitch(check_return(M:F(init, FinalArgs), S0))
     catch
         throw:?DONE ->
             ok
@@ -173,7 +175,7 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
     #st{}.
 
 check_return(Ret, S) ->
-    ?INFO_MSG(" -> ~p", [Ret]),
+    ?INFO_MSG("~p -> ~p", [S, Ret]),
     case Ret of
         stop ->
             throw(?DONE);
@@ -311,6 +313,15 @@ get_env(K, Default) ->
             Default;
         {ok, Value} ->
 	        Value
+    end.
+
+get_strategy(T) ->
+    try mnesia:read_table_property(T, unsplit_strategy) of
+        {unsplit_strategy, Strategy} ->
+            Strategy
+    catch
+        exit:_ ->
+            default_strategy()
     end.
 
 get_method(T, Def) ->

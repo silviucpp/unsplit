@@ -33,7 +33,7 @@ init_per_suite(Conf) ->
 
     StartNode = fun(Node)->
         ct:print("starting node ~p, on host ~p",[Node, Host]),
-        {ok, StartedNode} = slave:start(Host, Node, "-pa ../../_build/test/lib/*/ebin -pa ../../_build/test/lib/unsplit/test -kernel prevent_overlapping_partitions false -kernel dist_auto_connect once -loader inet -hosts 127.0.0.1 -setcookie " ++ atom_to_list(erlang:get_cookie())),
+        {ok, StartedNode} = slave:start(Host, Node, "-pa ../../_build/test/lib/*/ebin -pa ../../_build/test/lib/unsplit/test -kernel prevent_overlapping_partitions false -kernel dist_auto_connect once -config ../../test/sys.config -loader inet -hosts 127.0.0.1 -setcookie " ++ atom_to_list(erlang:get_cookie())),
         StartedNode
     end,
 
