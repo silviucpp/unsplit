@@ -2,3 +2,6 @@
 *~
 /deps
 /.eunit
+/.idea/
+/_build/
+/unsplit.iml
