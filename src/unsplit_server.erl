@@ -23,6 +23,8 @@
 %%-------------------------------------------------------------------
 -module(unsplit_server).
 
+-include("unsplit.hrl").
+
 -behaviour(gen_server).
 
 -export([
@@ -75,15 +77,15 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({mnesia_system_event, {inconsistent_database, Context, Node}}, State) ->
-    io:fwrite("inconsistency. Context = ~p; Node = ~p~n", [Context, Node]),
+    ?INFO_MSG("inconsistency. Context = ~p; Node = ~p", [Context, Node]),
     Res = global:trans({?LOCK, self()}, fun() ->
-            io:fwrite("have lock...~n", []),
-            stitch_together(node(), Node)
+        ?INFO_MSG("have lock...", []),
+        stitch_together(node(), Node)
     end),
-    io:fwrite("Res = ~p~n", [Res]),
+    ?INFO_MSG("Res = ~p", [Res]),
     {noreply, State};
 handle_info(_Info, State) ->
-    io:fwrite("Got event: ~p~n", [_Info]),
+    ?INFO_MSG("Got event: ~p", [_Info]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -97,7 +99,7 @@ code_change(_OldVsn, State, _Extra) ->
 stitch_together(NodeA, NodeB) ->
     case lists:member(NodeB, mnesia:system_info(running_db_nodes)) of
         true ->
-            io:fwrite("~p already stitched, it seems. All is well.~n", [NodeB]),
+            ?INFO_MSG("~p already stitched, it seems. All is well.", [NodeB]),
             ok;
         false ->
             do_stitch_together(NodeA, NodeB)
@@ -105,13 +107,13 @@ stitch_together(NodeA, NodeB) ->
 
 do_stitch_together(NodeA, NodeB) ->
     [IslandA, IslandB] = [rpc:call(N, mnesia, system_info, [running_db_nodes]) || N <- [NodeA, NodeB]],
-    io:fwrite("IslandA = ~p;~nIslandB = ~p~n", [IslandA, IslandB]),
+    ?INFO_MSG("IslandA = ~p;~nIslandB = ~p", [IslandA, IslandB]),
     TabsAndNodes = affected_tables(IslandA, IslandB),
     Tabs = [T || {T,_} <- TabsAndNodes],
-    io:fwrite("Affected tabs = ~p~n", [Tabs]),
+    ?INFO_MSG("Affected tabs = ~p", [Tabs]),
     DefaultMethod = default_method(),
     TabMethods = [{T, Ns, get_method(T, DefaultMethod)} || {T,Ns} <- TabsAndNodes],
-    io:fwrite("Methods = ~p~n", [TabMethods]),
+    ?INFO_MSG("Methods = ~p", [TabMethods]),
     mnesia_controller:connect_nodes([NodeB], fun(MergeF) ->
         case MergeF(Tabs) of
             {merged,_,_} = Res ->
@@ -119,7 +121,7 @@ do_stitch_together(NodeA, NodeB) ->
                 %% For now, assume that we have merged with the right
                 %% node, and not with others that could also be
                 %% consistent (mnesia gurus, how does this work?)
-                io:fwrite("stitching: ~p~n", [TabMethods]),
+                ?INFO_MSG("stitching: ~p", [TabMethods]),
                 stitch_tabs(TabMethods, NodeB),
                 Res;
             Other ->
@@ -132,15 +134,15 @@ show_locks(OtherNode) ->
         {node(), mnesia_locker:get_held_locks()},
         {OtherNode, rpc:call(OtherNode, mnesia_locker,get_held_locks,[])}
     ],
-    io:fwrite("Held locks = ~p~n", [Info]).
+    ?INFO_MSG("Held locks = ~p", [Info]).
 
 stitch_tabs(TabMethods, NodeB) ->
     [do_stitch(TM, NodeB) || TM <- TabMethods].
 
 do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
-    io:fwrite("do_stitch(~p, ~p).~n", [TM,Remote]),
+    ?INFO_MSG("do_stitch(~p, ~p).", [TM,Remote]),
     HasCopy = lists:member(Remote, Ns),
-    io:fwrite("~p has a copy of ~p? -> ~p~n", [Remote, Tab, HasCopy]),
+    ?INFO_MSG("~p has a copy of ~p? -> ~p", [Remote, Tab, HasCopy]),
     Attrs = mnesia:table_info(Tab, attributes),
     S0 = #st{
         module = M, function = F, extra_args = XArgs,
@@ -148,7 +150,7 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
         remote = Remote,
         chunk = get_table_chunk_factor(Tab),
         strategy = default_strategy()},
-        io:fwrite("Calling ~p:~p(init, ~p)", [M,F,[Tab,Attrs|XArgs]]),
+        ?INFO_MSG("Calling ~p:~p(init, ~p)", [M,F,[Tab,Attrs|XArgs]]),
     try
         run_stitch(check_return(M:F(init, [Tab, Attrs | XArgs]), S0))
     catch
@@ -160,7 +162,7 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
     #st{}.
 
 check_return(Ret, S) ->
-    io:fwrite(" -> ~p~n", [Ret]),
+    ?INFO_MSG(" -> ~p", [Ret]),
     case Ret of
         stop ->
             throw(?DONE);
@@ -264,7 +266,7 @@ affected_tables(IslandA, IslandB) ->
     Tabs = mnesia:system_info(tables) -- [schema],
     lists:foldl(fun(T, Acc) ->
         Nodes = lists:concat([mnesia:table_info(T, C) || C <- backend_types()]),
-        io:fwrite("nodes_of(~p) = ~p~n", [T, Nodes]),
+        ?INFO_MSG("nodes_of(~p) = ~p", [T, Nodes]),
         case {intersection(IslandA, Nodes), intersection(IslandB, Nodes)} of
             {[_|_], [_|_]} ->
                 [{T, Nodes}|Acc];
