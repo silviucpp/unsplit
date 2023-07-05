@@ -15,7 +15,6 @@
 %%==============================================================================
 
 @copyright 2010 Erlang Solutions Ltd.
-@version 0.5
 @title unsplit - A framework for resolving Mnesia netsplits
 
 @doc
