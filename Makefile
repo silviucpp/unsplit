@@ -3,23 +3,23 @@
 all: compile
 
 compile: deps
-	./rebar compile
+	rebar3 compile
 
 clean:
-	./rebar clean
+	rebar3 clean
 
 deps:
-	./rebar get-deps
-	./rebar update-deps
+	rebar3 get-deps
+	rebar3 update-deps
 
 eunit:
-	./rebar eunit
+	rebar3 eunit
 
 test:
-	./rebar ct
+	rebar3 ct
 
 docs: doc
 doc:
-	./rebar doc
-#	./mk_readme.escript doc/README.md README.md
+	rebar3 edoc
+
 

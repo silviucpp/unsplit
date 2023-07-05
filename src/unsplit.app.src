@@ -29,7 +29,7 @@
 %% @end
 
 {application, unsplit, [
-    {vsn, "0.5"},
+    {vsn, "1.0"},
     {modules, []},
     {description, "Merges mnesia tables after net split."},
     {applications, [

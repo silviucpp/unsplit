@@ -24,41 +24,46 @@
 
 %% @doc Unsplit Inconsistency Reporter Behaviour
 %%
-%% This module implements a basic behaviour for reporting inconsistencies 
+%% This module implements a basic behaviour for reporting inconsistencies
 %% encountered during the merge procedure.
 %%
 %% @end
+
 -module(unsplit_reporter).
 
--export([childspec/0,
-         inconsistency/4]).
+-export([
+    childspec/0,
+    inconsistency/4,
+    behaviour_info/1
+]).
 
--export([behaviour_info/1]).
-
-
-behaviour_info(callbacks) ->
-    [{childspec, 0},
-     {inconsistency, 4}];
+behaviour_info(callbacks) -> [
+    {childspec, 0},
+    {inconsistency, 4}
+];
 behaviour_info(_) ->
     undefined.
 
-%% @spec childspec() -> ignore | supervisor:child_spec()
 %% @doc Return a child start specification for the pre-defined reporter
 %%
 %% See {@link supervisor}.
 %% Use `ignore' if no process should be started.
 %% @end
-%%
+
+-spec childspec() ->
+    ignore | supervisor:child_spec().
+
 childspec() ->
     %% no need for a process in this case.
     ignore.
 
-%% @spec inconsistency(Table, Key, ObjectA, ObjectB) -> ok
 %% @doc Report an inconsistency encountered during the merge
-%% 
+%%
 %% The default implementation raises an alarm via the SASL alarm_handler
 %% @end
-%%
+
+-spec inconsistency(Table::any(), Key::any(), ObjectA::any(), ObjectB::any()) ->
+    ok.
+
 inconsistency(Table, Key, ObjA, ObjB) ->
-    alarm_handler:set_alarm({unsplit, inconsistency,
-                             [Table, Key, ObjA, ObjB]}).
+    alarm_handler:set_alarm({unsplit, inconsistency, [Table, Key, ObjA, ObjB]}).

@@ -22,65 +22,75 @@
 %%-------------------------------------------------------------------
 %%
 %% @doc Framework for merging mnesia tables after netsplit
-%% 
+%%
 %% <p>...</p>
 %%
 %% @end
+
 -module(unsplit).
 
 -behaviour(application).
 -behaviour(supervisor).
 
--export([get_reporter/0,
-         report_inconsistency/4, report_inconsistency/5]).
+-export([
+    get_reporter/0,
+    report_inconsistency/4,
+    report_inconsistency/5,
 
+    start/2,
+    stop/1,
+    init/1
+]).
 
-%% application start/stop API
--export([start/2, stop/1]).
--export([init/1]).
-
-
-%% @spec get_reporter() -> module()
 %% @doc Look up the predefined callback module for reporting inconsistencies
-%%
+
+-spec get_reporter() ->
+    module().
+
 get_reporter() ->
     {ok, R} = application:get_env(unsplit, reporter),
     R.
 
-%% @spec report_inconsistency(Table, Key, ObjectA, ObjectB) -> ok
 %% @doc Report an inconcistency to the predefined reporter
-%%
+
+-spec report_inconsistency(Table::any(), Key::any(), ObjectA::any(), ObjectB::any()) ->
+    ok.
+
 report_inconsistency(Tab, Key, ObjA, ObjB) ->
     report_inconsistency(get_reporter(), Tab, Key, ObjA, ObjB).
 
-%% @spec report_inconsistency(Reporter, Table, Key, ObjectA, ObjectB) -> ok
 %% @doc Report an inconsistency to Reporter (an unsplit_reporter behaviour)
-%%
+
+-spec report_inconsistency(Reporter::any(), Table::any(), Key::any(), ObjectA::any(), ObjectB::any()) ->
+    ok.
+
 report_inconsistency(Reporter, Tab, Key, ObjA, ObjB) ->
     Reporter:inconsistency(Tab, Key, ObjA, ObjB).
 
-
-%% @spec start(Type, Arg) -> {ok, pid()}
 %% @doc Application start callback
-%%
+
+-spec start(Type::any(), Arg::[any()]) ->
+    {ok, pid()}.
+
 start(_, _) ->
     supervisor:start_link({local,?MODULE}, ?MODULE, []).
 
-%% @spec stop(State) -> ok
 %% @doc Application stop callback
-%%
+
+-spec stop(State::any()) ->
+    ok.
+
 stop(_) ->
     ok.
 
-%% Supervisor callback:    
-
+%% Supervisor callback:
 %% @hidden
-init([]) ->
-    Children = [{unsplit_server, {unsplit_server, start_link, []},
-                 permanent, 3000, worker, [unsplit_server]} |
-                reporting_channel()],
-    {ok, {{one_for_one, 3, 10}, Children}}.
 
+init([]) ->
+    Children = [
+        {unsplit_server, {unsplit_server, start_link, []}, permanent, 3000, worker, [unsplit_server]} | reporting_channel()
+    ],
+    {ok, {{one_for_one, 3, 10}, Children}}.
 
 reporting_channel() ->
     {ok, R} = application:get_env(unsplit, reporter),

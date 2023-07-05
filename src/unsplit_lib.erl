@@ -27,46 +27,54 @@
 %%
 %%
 %% @end
+
 -module(unsplit_lib).
--export([no_action/2,
-         bag/2,
-         last_modified/2,
-         last_version/2,
-	 vclock/2]).
 
 -include("unsplit.hrl").
 
-%% @spec no_action(init, State) -> stop
+-export([
+    no_action/2,
+    bag/2,
+    last_modified/2,
+    last_version/2,
+    vclock/2
+]).
+
 %% @doc Minimal merge action - does nothing
 %% @end
-%%
+
+-spec no_action(init, State::any()) ->
+    stop.
+
 no_action(init, [Tab|_]) ->
     error_logger:format("Will not merge table ~p~n", [Tab]),
     stop.
 
-%% @spec last_modified(Phase, State) -> merge_ret()
 %% @doc Keeps the last modified object, based on the `modified' attribute
 %%
-%% This function assumes that the table to be merged contains objects with
-%% a `modified' attribute.
+%% This function assumes that the table to be merged contains objects with a `modified' attribute.
 %% @end
-%%
+
+- spec last_modified(Phase::any(), State::any()) ->
+    merge_ret().
+
 last_modified(init, S0) ->
     last_version(init, S0 ++ [modified]);
 last_modified(Other, S) ->
     last_version(Other, S).
 
-%% @spec bag(Phase, State) -> merge_ret()
 %% @doc Default `bag' merge; removes duplicate objects
+
+-spec bag(Phase::any(), State::any()) ->
+    merge_ret().
+
 bag(init, _S0) ->
     {ok, []};
 bag(done, _S) ->
     stop;
 bag(Objs, S) ->
-    Merged = lists:usort(lists:concat([A ++ B || {A,B} <- Objs])),
-    {ok, [{write, Merged}], S}.
+    {ok, [{write, lists:usort(lists:concat([A ++ B || {A,B} <- Objs]))}], S}.
 
-%% @spec last_version(Phase, State) -> merge_ret()
 %% @doc Picks the object with the greatest value of a given attribute
 %%
 %% This function assumes that an attribute name is passed as an extra argument.
@@ -77,12 +85,14 @@ bag(Objs, S) ->
 %% The function will choose the object that has the greatest value in the
 %% position given by `Attr'.
 %% @end
-%%
+
+-spec last_version(Phase::any(), State::any()) ->
+    merge_ret().
+
 last_version(init, [Tab, Attrs, Attr]) ->
     case lists:member(Attr, Attrs) of
         false ->
-            error_logger:format("Cannot merge table ~p."
-                                "Missing ~p attribute~n", [Tab, Attr]),
+            error_logger:format("Cannot merge table ~p. Missing ~p attribute~n", [Tab, Attr]),
             stop;
         true ->
             io:fwrite("Starting merge of ~p (~p)~n", [Tab, Attrs]),
@@ -91,16 +101,12 @@ last_version(init, [Tab, Attrs, Attr]) ->
 last_version(done, _S) ->
     stop;
 last_version(Objs, {T, P} = S) when is_list(Objs) ->
-    Actions = lists:map(fun(Obj) ->
-                                last_version_entry(Obj, T, P)
-                        end, Objs),
-    {ok, Actions, same, S}.
+    {ok, lists:map(fun(Obj) -> last_version_entry(Obj, T, P) end, Objs), same, S}.
 
 vclock(init, [Tab, Attrs, Attr]) ->
     case lists:member(Attr, Attrs) of
         false ->
-            error_logger:format("Cannot merge table ~p."
-                                "Missing ~p attribute~n", [Tab, Attr]),
+            error_logger:format("Cannot merge table ~p. Missing ~p attribute~n", [Tab, Attr]),
             stop;
         true ->
             io:fwrite("Starting merge of ~p (~p)~n", [Tab, Attrs]),
@@ -109,45 +115,45 @@ vclock(init, [Tab, Attrs, Attr]) ->
 vclock(done, _) ->
     stop;
 vclock(Objs, {T, P} = S) ->
-    Comp =
-	fun(A, B) ->
+    Comp = fun(A, B) ->
 		case unsplit_vclock:descends(A, B) of
-		    true -> left;
+		    true ->
+                left;
 		    false ->
-			case unsplit_vclock:descends(B, A) of
-			    true -> right;
-			    false ->
-				neither
-			end
+                case unsplit_vclock:descends(B, A) of
+                    true ->
+                        right;
+                    false ->
+                        neither
+                end
 		end
 	end,
-    Actions = lists:map(fun(Obj) ->
-				compare(Obj, T, P, Comp)
-			end, Objs),
-    {ok, Actions, same, S}.
+    {ok, lists:map(fun(Obj) ->  compare(Obj, T, P, Comp) end, Objs), same, S}.
 
 last_version_entry(Obj, T, P) ->
     io:fwrite("last_version_entry(~p)~n", [Obj]),
-    compare(Obj, T, P, fun(A, B) when A < B -> left;
-			  (A, B) when A > B -> right;
-			  (_, _) -> neither
-		       end).
+    compare(Obj, T, P, fun(A, B) when A < B -> left; (A, B) when A > B -> right; (_, _) -> neither end).
 
 compare(Obj, T, P, Comp) ->
     io:fwrite("compare(~p)~n", [Obj]),
     case Obj of
-        {A, []} -> {write, A};
-        {[], B} -> {write, B};
+        {A, []} ->
+            {write, A};
+        {[], B} ->
+            {write, B};
         {[A], [B]} ->
             ModA = element(P, A),
             ModB = element(P, B),
-	    case Comp(ModA, ModB) of
-		left    -> {write, B};
-		right   -> {write, A};
-        neither -> unsplit:report_inconsistency(T, <<"neither">>, A, B)
-	    end
+	        case Comp(ModA, ModB) of
+		        left ->
+                    {write, B};
+		        right
+                    ->
+                    {write, A};
+                neither ->
+                    unsplit:report_inconsistency(T, <<"neither">>, A, B)
+	        end
     end.
-
 
 pos(A, T, L) ->
     pos(A, T, L, 2).  % record tag is the 1st element in the tuple
