@@ -232,8 +232,11 @@ new_strategy(same, S) ->
     S;
 new_strategy({M,F}, S) ->
     S#st{strategy = {M, F}};
+new_strategy(all_remote_keys, S) ->
+    S#st{strategy = all_remote_keys};
 new_strategy(all_keys, S) ->
     S#st{strategy = all_keys}.
+
 
 perform_actions(Actions, #st{table = Tab, remote = Remote} = S) ->
     local_perform_actions(Actions, Tab),
@@ -258,7 +261,28 @@ run_stitch(#st{table = Tab,
                  true ->
                       check_return(M:F([{A, B}], MSt), Sx)
               end
-      end, St, Keys).
+      end, St, Keys);
+run_stitch(#st{table = Tab, 
+               module = M, function = F, modstate = MSt,
+               strategy = all_remote_keys, remote = Remote} = St) ->
+    Keys = mnesia:dirty_all_keys(Tab),
+    RemoteKeys = rpc:call(Remote, mnesia, dirty_all_keys, [Tab]),
+    Union = sets:to_list(sets:union(sets:from_list(Keys), sets:from_list(RemoteKeys))),
+    lists:foldl(
+      fun(K, Sx) ->
+              A = mnesia:read({Tab,K}),
+              B = get_remote_obj(Remote, Tab, K),
+              if A == B ->
+                      Sx;
+                 true ->
+                      case {A,B} of
+                        {P1,[]} -> check_return(M:F([{P1, []}], MSt), Sx);
+                        {[],P2} -> check_return(M:F([{P2, []}], MSt), Sx);
+                        {P1,P2} -> check_return(M:F([{P1, P2}], MSt), Sx)
+                      end
+              end
+      end, St, Union).
+
 
 get_remote_obj(Remote, Tab, Key) ->
     ask_remote(Remote, {get_obj, Tab, Key}).
