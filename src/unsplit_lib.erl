@@ -22,9 +22,9 @@
 %%-------------------------------------------------------------------
 %%
 %% @doc Predefined merge functions
-%% 
+%%
 %% This module implements a few merge functions that can be used.
-%% 
+%%
 %%
 %% @end
 -module(unsplit_lib).
@@ -47,7 +47,7 @@ no_action(init, [Tab|_]) ->
 %% @spec last_modified(Phase, State) -> merge_ret()
 %% @doc Keeps the last modified object, based on the `modified' attribute
 %%
-%% This function assumes that the table to be merged contains objects with 
+%% This function assumes that the table to be merged contains objects with
 %% a `modified' attribute.
 %% @end
 %%
@@ -74,7 +74,7 @@ bag(Objs, S) ->
 %%
 %% `{unsplit_method, {unsplit_lib, last_version, [Attr]}}'
 %%
-%% The function will choose the object that has the greatest value in the 
+%% The function will choose the object that has the greatest value in the
 %% position given by `Attr'.
 %% @end
 %%
@@ -144,7 +144,7 @@ compare(Obj, T, P, Comp) ->
 	    case Comp(ModA, ModB) of
 		left    -> {write, B};
 		right   -> {write, A};
-		neither -> unsplit:report_inconsistency(T, A, B)
+        neither -> unsplit:report_inconsistency(T, <<"neither">>, A, B)
 	    end
     end.
 
