@@ -31,8 +31,17 @@
 -author('Andy Gross <andy@basho.com>').
 -author('Ulf Wiger <ulf.wiger@erlang-solutions.com>').
 
--export([fresh/0,descends/2,merge/1,get_counter/2,get_timestamp/2,
-	increment/2,all_nodes/1,equal/2,prune/3]).
+-export([
+    fresh/0,
+    descends/2,
+    merge/1,
+    get_counter/2,
+    get_timestamp/2,
+	increment/2,
+    all_nodes/1,
+    equal/2,
+    prune/3
+]).
 
 -include_lib("eunit/include/eunit.hrl").
 
