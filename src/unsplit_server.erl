@@ -198,10 +198,10 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
     io:fwrite("~p has a copy of ~p? -> ~p~n", [Remote, Tab, HasCopy]),
     Attrs = mnesia:table_info(Tab, attributes),
     S0 = #st{module = M, function = F, extra_args = XArgs,
-             table = Tab, attributes = Attrs,
-             remote = Remote,
-             chunk = get_table_chunk_factor(Tab),
-             strategy = default_strategy()},
+        table = Tab, attributes = Attrs,
+        remote = Remote,
+        chunk = get_table_chunk_factor(Tab),
+        strategy = default_strategy()},
     io:fwrite("Calling ~p:~p(init, ~p)", [M,F,[Tab,Attrs|XArgs]]),
     try
         run_stitch(check_return(M:F(init, [Tab, Attrs | XArgs]), S0))
@@ -267,7 +267,7 @@ run_stitch(#st{table = Tab,
                strategy = all_remote_keys, remote = Remote} = St) ->
     Keys = mnesia:dirty_all_keys(Tab),
     RemoteKeys = rpc:call(Remote, mnesia, dirty_all_keys, [Tab]),
-    Union = sets:to_list(sets:union(sets:from_list(Keys), sets:from_list(RemoteKeys))),
+    Union = lists:umerge(lists:sort(Keys), lists:sort(RemoteKeys)),
     lists:foldl(
       fun(K, Sx) ->
               A = mnesia:read({Tab,K}),
