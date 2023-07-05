@@ -106,7 +106,18 @@ stitch_together(NodeA, NodeB) ->
     end.
 
 do_stitch_together(NodeA, NodeB) ->
-    [IslandA, IslandB] = [rpc:call(N, mnesia, system_info, [running_db_nodes]) || N <- [NodeA, NodeB]],
+    % fix from https://github.com/esl/unsplit/pull/2
+    case rpc:multicall([NodeA, NodeB], mnesia, system_info, [running_db_nodes]) of
+        {[IslandA, IslandB], []} ->
+            do_stitch_together(NodeB, IslandA, IslandB);
+        _Other ->
+            %% An rpc:call/4 failed, most probably because NodeB is
+            %% not alive. Assume we will get a new event once it's
+            %% back online. The work for now is done.
+            ok
+    end.
+
+do_stitch_together(NodeB, IslandA, IslandB) ->
     ?INFO_MSG("IslandA = ~p;~nIslandB = ~p", [IslandA, IslandB]),
     TabsAndNodes = affected_tables(IslandA, IslandB),
     Tabs = [T || {T,_} <- TabsAndNodes],
