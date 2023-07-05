@@ -2,155 +2,145 @@
 %%% Test suite for unsplit
 %%% @copyright Nimbuzz B.V.
 %%% @author Ahmed Omar <omar@nimbuzz.nl>
--module(unsplit_SUITE).
 %%% @end
+
+-module(unsplit_SUITE).
+
 -include_lib("eunit/include/eunit.hrl").
-%%% Include files
 -include_lib("common_test/include/ct.hrl").
 
-%%% External exports
 -compile(export_all).
-%% -define(ERL_FLAGS, "-kernel dist_auto_connect once -pa ../../ -pa ../../../ebin/").
--define(ERL_FLAGS, "-kernel dist_auto_connect once").
+
 -define(TABLE, test1).
--define(NODES, ['mn1@localhost', 'mn2@localhost']).
--define(DISCONNECT_TIME, 4000).
--define(UNSPLIT_TIMEOUT, 5000).
--record(?TABLE,{key,modified=erlang:now(),value}).
-%%% Macros
+-define(NODES, ['cn1', 'cn2']).
+-define(DISCONNECT_TIME, 2000).
+-define(UNSPLIT_TIMEOUT, 2000).
+-record(?TABLE, {key, modified=erlang:timestamp(), value}).
 
-all() ->
-    [split1].
-
+all() -> [
+    split1
+].
 
 init_per_suite(Conf) ->
+    net_kernel:start(['test@127.0.0.1', longnames]),
+    erl_boot_server:start(['127.0.0.1']),
+    application:ensure_all_started(unsplit),
+
     Nodes = ct:get_config(nodes, ?NODES),
     DisconnectTime = ct:get_config(disconnect_time, ?DISCONNECT_TIME),
     UnsplitTimeout = ct:get_config(unsplit_timeout, ?UNSPLIT_TIMEOUT),
-    Host = get_host(),
-    ErlFlags = lists:flatten([?ERL_FLAGS,
-			      get_path_flags(),
-			     " -pa ", filename:absname(
-					filename:dirname(code:which(?MODULE)))]),
-    ct:print("ErlFlags = ~p~n", [ErlFlags]),
+    Host = '127.0.0.1',
+
     StartNode = fun(Node)->
-                        ct:print("starting node ~p, on host ~p ~n",[Node, Host]),
-                        {ok, NodeName} = ct_slave:start(Host, Node,
-                                                        [{erl_flags, ErlFlags}]),
-                        NodeName
-                end,
+        ct:print("starting node ~p, on host ~p",[Node, Host]),
+        {ok, StartedNode} = slave:start(Host, Node, "-pa ../../_build/test/lib/*/ebin -pa ../../_build/test/lib/unsplit/test -kernel prevent_overlapping_partitions false -kernel dist_auto_connect once -loader inet -hosts 127.0.0.1 -setcookie " ++ atom_to_list(erlang:get_cookie())),
+        StartedNode
+    end,
 
     NodeNames = lists:map(StartNode, Nodes),
-    [{disconnect_time, DisconnectTime},
-     {unsplit_timeout, UnsplitTimeout},
-     {nodes, NodeNames}|Conf].
+
+    ct:print("started things: ~p",[NodeNames]),
+
+    [
+        {disconnect_time, DisconnectTime},
+        {unsplit_timeout, UnsplitTimeout},
+        {nodes, NodeNames}|Conf
+    ].
 
 end_per_suite(_Conf) ->
-    Nodes = ct:get_config(nodes,?NODES),
-    Host = get_host(),
-    StopNode = fun(Node)->
-                       {ok, _NodeName} = ct_slave:stop(Host, Node)
-               end,
+    Nodes = ct:get_config(nodes, ?NODES),
+    StopNode = fun(Node)-> ok = slave:stop(Node) end,
     lists:map(StopNode, Nodes),
     ok.
 
 init_per_testcase(Case, Conf) ->
-    ct:print("Test case ~p started", [Case]),
+    ct:print("Test case ~p started ...", [Case]),
     init_nodes(get_conf(nodes, Conf)),
     Conf.
 
 end_per_testcase(Case, Conf) ->
-    ct:print("Test case ~p finished", [Case]),
+    ct:print("Test case ~p finished ...", [Case]),
     terminate_nodes(get_conf(nodes, Conf)),
     Conf.
 
-split1()->
-    [{userdata, [{doc, "Tests split network of 2 nodes"}]}].
 split1(Conf)->
     DisconnectTime = get_conf(disconnect_time, Conf),
     UnsplitTimeout = get_conf(unsplit_timeout, Conf),
     Nodes = [M, S|_Rest] = get_conf(nodes, Conf),
-    ct:print("Initial table size~n"),
-    print_table_size(Nodes, ?TABLE),
-    ct:print("inserting records~n"),
-    {atomic, ok} = write(M, [#?TABLE{key=1, value=a}, #?TABLE{key=2, value=a}]),
-    print_table_size(Nodes, ?TABLE),
-    ct:print("disconnecting nodes~n"),
+
+    ct:print("Initial tables ..."),
+    {MasterContent0, SlaveContent0} = print_tables(Nodes, ?TABLE),
+    ?assertEqual(MasterContent0, SlaveContent0),
+
+    ct:print("inserting records ..."),
+    ?assertEqual({atomic, ok}, write(M, [#?TABLE{key=1, value=a}, #?TABLE{key=2, value=a}])),
+    {MasterContent1, SlaveContent1} = print_tables(Nodes, ?TABLE),
+    ?assertEqual(MasterContent1, SlaveContent1),
+
+    ct:print("disconnecting node ~p from ~p", [M, S]),
     disconnect(M, S),
-    ct:print("inserting records on one node, while the other one is disconnected~n"),
-    {atomic, ok} = write(M, [#?TABLE{key=3, value=b}, #?TABLE{key=4, value=b}]),
-    print_table_size(Nodes, ?TABLE),
+
+    ct:print("updating records on one node, while the other one is disconnected ..."),
     timer:sleep(DisconnectTime),
-    ct:print("reconnecting nodes~n"),
-    connect(S, M),
+
+    ?assertEqual({atomic, ok}, write(M, [#?TABLE{key=1, modified=erlang:timestamp() ,value=c}, #?TABLE{key=2, modified=erlang:timestamp(), value=d}])),
+    {MasterContent2, SlaveContent2} = print_tables(Nodes, ?TABLE),
+    ?assertNotEqual(MasterContent2, SlaveContent2),
+
+    ct:print("reconnecting nodes ..."),
+
+    connect(M, S),
     timer:sleep(UnsplitTimeout),
-    print_table_size(Nodes, ?TABLE),
-    true = compare_table_size(Nodes, ?TABLE).
+    {MasterContent3, SlaveContent3} = print_tables(Nodes, ?TABLE),
+    ?assertEqual(MasterContent3, SlaveContent3),
+    true.
 
+% internals
 
-compare_table_size([Node1, Node2|_], Table)->
-    table_size(Node1, Table) == table_size(Node2, Table).
-
-table_size(Node, Table)->
-    rpc:call(Node, mnesia, table_info,[Table, size]).
-
-print_table_size([M,S|_], Table)->
-    ct:print("master size = ~p~n",[table_size(M, Table)]),
-    ct:print("slave size = ~p~n",[table_size(S, Table)]).
+print_tables([M,S|_], Table)->
+    MasterTable = rpc:call(M, ets, tab2list, [Table]),
+    SlaveTable = rpc:call(S, ets, tab2list, [Table]),
+    ct:print("master table = ~p", [MasterTable]),
+    ct:print("slave table = ~p", [SlaveTable]),
+    {MasterTable, SlaveTable}.
 
 get_conf(Key, Conf)->
     proplists:get_value(Key, Conf).
 
-
 terminate_nodes(Nodes)->
-    Terminate = fun(Node)->
-                        rpc:call(Node, application, stop, [unsplit]),
-                        rpc:call(Node, mnesia, stop,[]),
-                        rpc:call(Node, application, stop, [sasl])
-                end,
-    lists:foreach(Terminate, Nodes).
-
+    rpc:multicall(Nodes, application, stop, [unsplit]),
+    rpc:multicall(Nodes, mnesia, stop, []),
+    rpc:call(hd(Nodes), mnesia, delete_schema, [Nodes]).
 
 init_nodes(Nodes)->
-    Init = fun(Node)->
-                          rpc:call(Node, mnesia, delete_schema,[Node]),
-                          rpc:call(Node, application, start, [sasl]),
-                          rpc:call(Node, mnesia, start,[]),
-                          rpc:call(Node, application, start, [unsplit]),
-                          rpc:call(Node, mnesia, create_schema, [Nodes]),
-                          rpc:call(Node, mnesia, change_config, [extra_db_nodes, Nodes--[Node]]),
-                          rpc:call(Node, mnesia, delete_table, [?TABLE]),
-                          rpc:call(Node, mnesia, create_table, [?TABLE,
-                                                                [{ram_copies,Nodes},
-                                                                 {attributes,[key,modified,value]},
-                                                                 {user_properties,
-                                                                  [{unsplit_method,{unsplit_lib,last_modified,[]}}]}]])
-                  end,
-    lists:foreach(Init, Nodes).
+    FirstNode = hd(Nodes),
+    rpc:call(FirstNode, mnesia, create_schema, [Nodes]),
+    {[R1|_],[]} = rpc:multicall(Nodes, application, ensure_all_started, [unsplit]),
+    ?assertMatch({ok, _}, R1),
+
+    rpc:call(FirstNode, mnesia, create_table, [?TABLE, [
+        {ram_copies, Nodes},
+        {attributes, [key, modified, value]},
+        {user_properties, [
+            {unsplit_method, {unsplit_lib, last_modified, []}}]
+        }]
+    ]).
 
 disconnect(Master, Slave)->
-    rpc:call(Master, erlang, disconnect_node, [Slave]).
+    true = rpc:call(Master, erlang, disconnect_node, [Slave]),
+    NodeList = rpc:call(Master, erlang, nodes, []),
+    ct:print("node list is now: ~p", [NodeList]).
+
 connect(Master, Slave)->
-    rpc:call(Master, net_kernel, connect_node, [Slave]).
+    true = rpc:call(Master, net_kernel, connect_node, [Slave]),
+    NodeList = rpc:call(Master, erlang, nodes, []),
+    ct:print("node list is now: ~p", [NodeList]).
 
 write(Node, Records)->
     rpc:call(Node, ?MODULE, write, [Records]).
 
 write(Records)->
     Trans = fun()->
-                    lists:foreach(fun(Record)->
-                                          mnesia:write(Record)
-                                  end, Records)
-            end,
+        lists:foreach(fun(Record)-> mnesia:write(Record) end, Records)
+    end,
     mnesia:transaction(Trans).
-
-get_host()->
-    [_, H] = re:split(atom_to_list(node()),"@",[{return,list}]),
-    list_to_atom(H).
-    %% {ok, HostS} = inet:gethostname(),
-    %% list_to_atom(HostS).
-
-get_path_flags() ->
-    [ [[" -",atom_to_list(K)," ",D] || D <- V]
-      || {K,V} <- init:get_arguments(),
-	 K == pa orelse K == pz].
