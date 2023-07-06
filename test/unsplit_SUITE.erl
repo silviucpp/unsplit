@@ -17,8 +17,16 @@
 -define(UNSPLIT_TIMEOUT_MS, 2000).
 -record(?TABLE, {key, modified=erlang:timestamp(), value}).
 
+-define(TEST_CASE_SPLIT_ALL_REMOTE_KEYS_NO_ACTION, all_remote_keys_no_action).
+-define(TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_MODIFIED, all_remote_keys_last_modified).
+-define(TEST_CASE_SPLIT_ALL_REMOTE_KEYS_BAG, all_remote_keys_bag).
+-define(TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_VERSION, all_remote_keys_last_version).
+
 all() -> [
-    split1
+    ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_NO_ACTION,
+    ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_MODIFIED,
+    ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_BAG,
+    ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_VERSION
 ].
 
 init_per_suite(Conf) ->
@@ -72,9 +80,32 @@ end_per_suite(Conf) ->
     lists:map(StopNode, Nodes),
     ok.
 
-init_per_testcase(Case, Conf) ->
+init_per_testcase(Case, Conf0) ->
+    UserProperties = case Case of
+        ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_NO_ACTION -> [
+                {unsplit_strategy, all_remote_keys},
+                {unsplit_method, {unsplit_lib, no_action, []}} | Conf0
+            ];
+        ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_MODIFIED -> [
+            {unsplit_strategy, all_remote_keys},
+            {unsplit_method, {unsplit_lib, last_modified, []}} | Conf0
+        ];
+        ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_BAG -> [
+            {unsplit_strategy, all_remote_keys},
+            {unsplit_method, {unsplit_lib, bag, []}} | Conf0
+        ];
+        ?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_VERSION -> [
+            {unsplit_strategy, all_remote_keys},
+            {unsplit_method, {unsplit_lib, last_version, [modified]}} | Conf0
+        ];
+        _ ->
+            []
+    end,
+
+    Conf = [{user_properties, UserProperties}|Conf0],
+
     ct:print("Test case ~p started ...", [Case]),
-    init_nodes(proplists:get_value(nodes, Conf)),
+    init_nodes(Conf),
     Conf.
 
 end_per_testcase(Case, Conf) ->
@@ -82,7 +113,31 @@ end_per_testcase(Case, Conf) ->
     terminate_nodes(proplists:get_value(nodes, Conf)),
     Conf.
 
-split1(Conf)->
+?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_NO_ACTION(Conf) ->
+    {Master, Slave} = split_test(?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_NO_ACTION, Conf),
+    ?assertEqual(3, length(Master)),
+    ?assertEqual(3, length(Slave)),
+    ?assertEqual(ok, test_values(b, Master)).
+
+?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_MODIFIED(Conf) ->
+    {Master, Slave} = split_test(?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_MODIFIED, Conf),
+    ?assertEqual(4, length(Master)),
+    ?assertEqual(Master, Slave),
+    ?assertEqual(ok, test_values(b, Master)).
+
+?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_BAG(Conf) ->
+    {Master, Slave} = split_test(?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_MODIFIED, Conf),
+    ?assertEqual(4, length(Master)),
+    ?assertEqual(Master, Slave),
+    ?assertEqual(ok, test_values(b, Master)).
+
+?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_VERSION(Conf) ->
+    {Master, Slave} = split_test(?TEST_CASE_SPLIT_ALL_REMOTE_KEYS_LAST_VERSION, Conf),
+    ?assertEqual(4, length(Master)),
+    ?assertEqual(Master, Slave),
+    ?assertEqual(ok, test_values(b, Master)).
+
+split_test(_Case, Conf)->
     DisconnectTime = proplists:get_value(disconnect_time, Conf),
     UnsplitTimeout = proplists:get_value(unsplit_timeout, Conf),
     Nodes = [M, S|_Rest] = proplists:get_value(nodes, Conf),
@@ -93,7 +148,11 @@ split1(Conf)->
     ?assertEqual([], SlaveContent0),
 
     ct:print("inserting records ..."),
-    ?assertEqual({atomic, ok}, write(M, [#?TABLE{key=1, value=a}, #?TABLE{key=2, value=a}])),
+    ?assertEqual({atomic, ok}, write(M, [
+        #?TABLE{key=1, value=a1},
+        #?TABLE{key=2, value=a2}
+    ])),
+
     {MasterContent1, SlaveContent1} = print_tables(Nodes, ?TABLE),
     ?assertEqual(MasterContent1, SlaveContent1),
     ?assertEqual(2, length(MasterContent1)),
@@ -101,20 +160,29 @@ split1(Conf)->
     ct:print("disconnecting node ~p from ~p", [M, S]),
     disconnect(M, S),
 
-    ct:print("updating records on one node, while the other one is disconnected ..."),
+    ct:print("updating records on the nodes, while they are disconected ..."),
     timer:sleep(DisconnectTime),
 
-    ?assertEqual({atomic, ok}, write(M, [#?TABLE{key=1, modified=erlang:timestamp() ,value=c}, #?TABLE{key=2, modified=erlang:timestamp(), value=d}])),
+    ?assertEqual({atomic, ok}, write(M, [
+        #?TABLE{key=1, modified=erlang:timestamp(), value=b1},
+        #?TABLE{key=2, modified=erlang:timestamp(), value=b2},
+        #?TABLE{key=3, modified=erlang:timestamp(), value=b3}
+    ])),
+
+    ?assertEqual({atomic, ok}, write(S, [
+        #?TABLE{key=4, modified=erlang:timestamp(), value=b4}
+    ])),
+
     {MasterContent2, SlaveContent2} = print_tables(Nodes, ?TABLE),
     ?assertNotEqual(MasterContent2, SlaveContent2),
+    ?assertEqual(3, length(MasterContent2)),
+    ?assertEqual(3, length(SlaveContent2)),
 
     ct:print("reconnecting nodes ..."),
 
     connect(M, S),
     timer:sleep(UnsplitTimeout),
-    {MasterContent3, SlaveContent3} = print_tables(Nodes, ?TABLE),
-    ?assertEqual(MasterContent3, SlaveContent3),
-    true.
+    print_tables(Nodes, ?TABLE).
 
 % internals
 
@@ -126,11 +194,13 @@ print_tables([M,S|_], Table)->
     {MasterTable, SlaveTable}.
 
 terminate_nodes(Nodes)->
+    rpc:multicall(Nodes, mnesia, del_table_copy, [?TABLE]),
     rpc:multicall(Nodes, application, stop, [unsplit]),
     rpc:multicall(Nodes, mnesia, stop, []),
     rpc:call(hd(Nodes), mnesia, delete_schema, [Nodes]).
 
-init_nodes(Nodes)->
+init_nodes(Conf)->
+    Nodes = proplists:get_value(nodes, Conf),
     FirstNode = hd(Nodes),
     rpc:call(FirstNode, mnesia, create_schema, [Nodes]),
 
@@ -140,10 +210,8 @@ init_nodes(Nodes)->
     rpc:call(FirstNode, mnesia, create_table, [?TABLE, [
         {ram_copies, Nodes},
         {attributes, record_info(fields, ?TABLE)},
-        {user_properties, [
-            {unsplit_method, {unsplit_lib, last_modified, []}}]
-        }]
-    ]).
+        {user_properties, proplists:get_value(user_properties, Conf)}
+    ]]).
 
 disconnect(Master, Slave)->
     true = rpc:call(Master, erlang, disconnect_node, [Slave]),
@@ -160,3 +228,10 @@ write(Node, Records)->
 
 write(Records)->
     mnesia:transaction(fun()-> lists:foreach(fun(Record)-> mnesia:write(Record) end, Records) end).
+
+test_values(Tag, TableContent) ->
+    TagAsList = atom_to_list(Tag),
+    lists:foreach(fun(#?TABLE{key = K, value = V}) ->
+        ExpectedV = list_to_atom(TagAsList ++ integer_to_list(K)),
+        ?assertEqual(ExpectedV, V)
+    end, TableContent).
