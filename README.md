@@ -4,6 +4,8 @@
 
 Copyright (c) 2010 Erlang Solutions Ltd.
 
+[![Build Status](https://travis-ci.com/silviucpp/unsplit.svg?branch=master)](https://travis-ci.com/github/silviucpp/unsplit)
+
 ### Changes over the original code:
 
 - Merged pull request related to `all_remote_keys` strategy. Identical to `all_keys` but will fetch all keys from remote node and works on an union of the keys.
