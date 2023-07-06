@@ -53,7 +53,7 @@
 
 -define(SERVER, ?MODULE).
 -define(DEFAULT_METHOD, {unsplit_lib, no_action, []}).
--define(DEFAULT_STRATEGY, all_keys).
+-define(DEFAULT_STRATEGY, all_remote_keys).
 -define(DONE, {?MODULE,done}).
 -define(LOCK, {?MODULE, stitch}).
 
@@ -224,19 +224,20 @@ run_stitch(#st{table = Tab, module = M, function = F, modstate = MSt, strategy =
     Keys = mnesia:dirty_all_keys(Tab),
     RemoteKeys = rpc:call(Remote, mnesia, dirty_all_keys, [Tab]),
     Union = lists:umerge(lists:sort(Keys), lists:sort(RemoteKeys)),
+
     lists:foldl(fun(K, Sx) ->
-        A = mnesia:read({Tab,K}),
+        A = mnesia:read({Tab, K}),
         B = get_remote_obj(Remote, Tab, K),
         if
             A == B ->
                 Sx;
             true ->
                 case {A,B} of
-                    {P1,[]} ->
+                    {P1, []} ->
                         check_return(M:F([{P1, []}], MSt), Sx);
-                    {[],P2} ->
+                    {[], P2} ->
                         check_return(M:F([{P2, []}], MSt), Sx);
-                    {P1,P2} ->
+                    {P1, P2} ->
                         check_return(M:F([{P1, P2}], MSt), Sx)
                 end
         end

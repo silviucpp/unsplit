@@ -131,11 +131,11 @@ vclock(Objs, {T, P} = S) ->
     {ok, lists:map(fun(Obj) ->  compare(Obj, T, P, Comp) end, Objs), same, S}.
 
 last_version_entry(Obj, T, P) ->
-    ?INFO_MSG("last_version_entry(~p)", [Obj]),
+    %?INFO_MSG("last_version_entry(~p)", [Obj]),
     compare(Obj, T, P, fun(A, B) when A < B -> left; (A, B) when A > B -> right; (_, _) -> neither end).
 
 compare(Obj, T, P, Comp) ->
-    ?INFO_MSG("compare(~p)", [Obj]),
+    %?INFO_MSG("compare(~p)", [Obj]),
     case Obj of
         {A, []} ->
             {write, A};

@@ -10,6 +10,7 @@ Copyright (c) 2010 Erlang Solutions Ltd.
 - Improve `all_remote_keys` strategy merge performance.
 - Add support to set the unsplit strategy per table using `unsplit_strategy` property.
 - Use `logger` for logging messages.
+- Default strategy changed to `all_remote_keys`.
 - Fix crash because of discrepancy in the number of params in reporting function.
 - [Merge pull request](https://github.com/esl/unsplit/pull/2): `unsplit_server` attempts to stitch together nodes before they would become reconnected.
 - Fix rebar3 compiling and update all deps.
