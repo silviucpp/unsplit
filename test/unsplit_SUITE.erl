@@ -29,27 +29,46 @@ init_per_suite(Conf) ->
     Nodes = ct:get_config(nodes, ?NODES),
     DisconnectTime = ct:get_config(disconnect_time, ?DISCONNECT_TIME),
     UnsplitTimeout = ct:get_config(unsplit_timeout, ?UNSPLIT_TIMEOUT),
-    Host = '127.0.0.1',
+    Host = "127.0.0.1",
 
-    StartNode = fun(Node)->
+    StartNode = fun(Node, {NodeNamesAcc, PeersAcc})->
         ct:print("starting node ~p, on host ~p",[Node, Host]),
-        {ok, StartedNode} = slave:start(Host, Node, "-pa ../../_build/test/lib/*/ebin -pa ../../_build/test/lib/unsplit/test -kernel prevent_overlapping_partitions false -kernel dist_auto_connect once -config ../../test/sys.config -loader inet -hosts 127.0.0.1 -setcookie " ++ atom_to_list(erlang:get_cookie())),
-        StartedNode
+
+        {ok, Peer, StartedNode} = ?CT_PEER(#{host => Host, longnames => true, name => Node, args => [
+            "-pa", "../../_build/test/lib/unsplit/ebin",
+            "-pa", "../../_build/test/lib/unsplit/test",
+            "-kernel", "prevent_overlapping_partitions", "false",
+            "-kernel", "dist_auto_connect", "once",
+            "-config", "../../test/sys.config",
+            "-loader", "inet",
+            "-hosts", Host,
+            "-setcookie", atom_to_list(erlang:get_cookie())
+        ]}),
+
+        unlink(Peer),
+
+        {[StartedNode|NodeNamesAcc], [{Node, Peer}|PeersAcc]}
     end,
 
-    NodeNames = lists:map(StartNode, Nodes),
+    {NodeNames, Peers} = lists:foldl(StartNode, {[], []}, Nodes),
 
-    ct:print("started things: ~p",[NodeNames]),
+    ct:print("started things: ~p peers: ~p",[NodeNames, Peers]),
 
     [
         {disconnect_time, DisconnectTime},
         {unsplit_timeout, UnsplitTimeout},
+        {peers, Peers},
         {nodes, NodeNames}|Conf
     ].
 
-end_per_suite(_Conf) ->
+end_per_suite(Conf) ->
     Nodes = ct:get_config(nodes, ?NODES),
-    StopNode = fun(Node)-> ok = slave:stop(Node) end,
+    Peers = get_conf(peers, Conf),
+
+    StopNode = fun(Node)->
+        {_, Peer} = proplists:lookup(Node, Peers),
+        ok = peer:stop(Peer)
+    end,
     lists:map(StopNode, Nodes),
     ok.
 
