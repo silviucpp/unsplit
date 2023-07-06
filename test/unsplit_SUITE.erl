@@ -63,7 +63,7 @@ init_per_suite(Conf) ->
 
 end_per_suite(Conf) ->
     Nodes = ct:get_config(nodes, ?NODES),
-    Peers = get_conf(peers, Conf),
+    Peers = proplists:get_value(peers, Conf),
 
     StopNode = fun(Node)->
         {_, Peer} = proplists:lookup(Node, Peers),
@@ -74,18 +74,18 @@ end_per_suite(Conf) ->
 
 init_per_testcase(Case, Conf) ->
     ct:print("Test case ~p started ...", [Case]),
-    init_nodes(get_conf(nodes, Conf)),
+    init_nodes(proplists:get_value(nodes, Conf)),
     Conf.
 
 end_per_testcase(Case, Conf) ->
     ct:print("Test case ~p finished ...", [Case]),
-    terminate_nodes(get_conf(nodes, Conf)),
+    terminate_nodes(proplists:get_value(nodes, Conf)),
     Conf.
 
 split1(Conf)->
-    DisconnectTime = get_conf(disconnect_time, Conf),
-    UnsplitTimeout = get_conf(unsplit_timeout, Conf),
-    Nodes = [M, S|_Rest] = get_conf(nodes, Conf),
+    DisconnectTime = proplists:get_value(disconnect_time, Conf),
+    UnsplitTimeout = proplists:get_value(unsplit_timeout, Conf),
+    Nodes = [M, S|_Rest] = proplists:get_value(nodes, Conf),
 
     ct:print("Initial tables ..."),
     {MasterContent0, SlaveContent0} = print_tables(Nodes, ?TABLE),
@@ -123,9 +123,6 @@ print_tables([M,S|_], Table)->
     ct:print("slave table = ~p", [SlaveTable]),
     {MasterTable, SlaveTable}.
 
-get_conf(Key, Conf)->
-    proplists:get_value(Key, Conf).
-
 terminate_nodes(Nodes)->
     rpc:multicall(Nodes, application, stop, [unsplit]),
     rpc:multicall(Nodes, mnesia, stop, []),
@@ -134,12 +131,13 @@ terminate_nodes(Nodes)->
 init_nodes(Nodes)->
     FirstNode = hd(Nodes),
     rpc:call(FirstNode, mnesia, create_schema, [Nodes]),
+
     {[R1|_],[]} = rpc:multicall(Nodes, application, ensure_all_started, [unsplit]),
     ?assertMatch({ok, _}, R1),
 
     rpc:call(FirstNode, mnesia, create_table, [?TABLE, [
         {ram_copies, Nodes},
-        {attributes, [key, modified, value]},
+        {attributes, record_info(fields, ?TABLE)},
         {user_properties, [
             {unsplit_method, {unsplit_lib, last_modified, []}}]
         }]
@@ -159,7 +157,4 @@ write(Node, Records)->
     rpc:call(Node, ?MODULE, write, [Records]).
 
 write(Records)->
-    Trans = fun()->
-        lists:foreach(fun(Record)-> mnesia:write(Record) end, Records)
-    end,
-    mnesia:transaction(Trans).
+    mnesia:transaction(fun()-> lists:foreach(fun(Record)-> mnesia:write(Record) end, Records) end).
