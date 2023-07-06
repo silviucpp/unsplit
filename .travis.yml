@@ -24,4 +24,4 @@ script:
   - ./rebar3 compile
 
 after_success:
-  - ./make ct
+  - make ct
