@@ -13,8 +13,8 @@
 
 -define(TABLE, test1).
 -define(NODES, ['cn1', 'cn2']).
--define(DISCONNECT_TIME, 2000).
--define(UNSPLIT_TIMEOUT, 2000).
+-define(DISCONNECT_TIME_MS, 2000).
+-define(UNSPLIT_TIMEOUT_MS, 2000).
 -record(?TABLE, {key, modified=erlang:timestamp(), value}).
 
 all() -> [
@@ -27,8 +27,8 @@ init_per_suite(Conf) ->
     application:ensure_all_started(unsplit),
 
     Nodes = ct:get_config(nodes, ?NODES),
-    DisconnectTime = ct:get_config(disconnect_time, ?DISCONNECT_TIME),
-    UnsplitTimeout = ct:get_config(unsplit_timeout, ?UNSPLIT_TIMEOUT),
+    DisconnectTime = ct:get_config(disconnect_time, ?DISCONNECT_TIME_MS),
+    UnsplitTimeout = ct:get_config(unsplit_timeout, ?UNSPLIT_TIMEOUT_MS),
     Host = "127.0.0.1",
 
     StartNode = fun(Node, {NodeNamesAcc, PeersAcc})->
@@ -44,9 +44,7 @@ init_per_suite(Conf) ->
             "-hosts", Host,
             "-setcookie", atom_to_list(erlang:get_cookie())
         ]}),
-
         unlink(Peer),
-
         {[StartedNode|NodeNamesAcc], [{Node, Peer}|PeersAcc]}
     end,
 
@@ -64,6 +62,8 @@ init_per_suite(Conf) ->
 end_per_suite(Conf) ->
     Nodes = ct:get_config(nodes, ?NODES),
     Peers = proplists:get_value(peers, Conf),
+
+    ct:print("stop nodes: ~p",[Nodes]),
 
     StopNode = fun(Node)->
         {_, Peer} = proplists:lookup(Node, Peers),
@@ -89,12 +89,14 @@ split1(Conf)->
 
     ct:print("Initial tables ..."),
     {MasterContent0, SlaveContent0} = print_tables(Nodes, ?TABLE),
-    ?assertEqual(MasterContent0, SlaveContent0),
+    ?assertEqual([], MasterContent0),
+    ?assertEqual([], SlaveContent0),
 
     ct:print("inserting records ..."),
     ?assertEqual({atomic, ok}, write(M, [#?TABLE{key=1, value=a}, #?TABLE{key=2, value=a}])),
     {MasterContent1, SlaveContent1} = print_tables(Nodes, ?TABLE),
     ?assertEqual(MasterContent1, SlaveContent1),
+    ?assertEqual(2, length(MasterContent1)),
 
     ct:print("disconnecting node ~p from ~p", [M, S]),
     disconnect(M, S),
